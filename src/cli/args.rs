@@ -27,4 +27,48 @@ pub struct Cli {
   /// Hide month/date labels
   #[arg(long)]
   pub no_date: bool,
+
+  /// Show only the contribution graph
+  #[arg(long)]
+  pub graph_only: bool,
+
+  /// Enable spaced layout
+  #[arg(long)]
+  pub spaced: bool,
+
+  /// Disable spaced layout
+  #[arg(long)]
+  pub not_spaced: bool,
+
+  /// Custom width for contribution graph
+  #[arg(long)]
+  pub width: Option<usize>,
+
+  /// Custom height for contribution graph
+  #[arg(long)]
+  pub height: Option<usize>,
+
+  /// Hide achievements section
+  #[arg(long)]
+  pub no_achievements: bool,
+
+  /// Hide languages section
+  #[arg(long)]
+  pub no_languages: bool,
+
+  /// Hide issues section
+  #[arg(long)]
+  pub no_issues: bool,
+
+  /// Hide pull requests section
+  #[arg(long)]
+  pub no_pr: bool,
+
+  /// Hide account information
+  #[arg(long)]
+  pub no_account: bool,
+
+  /// Hide contribution grid/graph
+  #[arg(long)]
+  pub no_grid: bool,
 }

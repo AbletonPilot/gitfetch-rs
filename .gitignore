@@ -1,3 +1,5 @@
 /target
 /gitfetch-main
+Cargo.lock
 TODO.md
+README.md

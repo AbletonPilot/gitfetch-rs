@@ -1,5 +1,6 @@
 use super::colors::get_ansi_color;
 use crate::config::ColorConfig;
+use chrono::{Datelike, NaiveDate};
 use serde_json::Value;
 
 pub struct ContributionGraph {
@@ -96,8 +97,51 @@ impl ContributionGraph {
     }
   }
 
-  fn build_month_line(&self, _weeks: &[Week]) -> String {
-    String::from("    Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec")
+  fn build_month_line(&self, weeks: &[Week]) -> String {
+    if weeks.is_empty() {
+      return String::new();
+    }
+
+    let months = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    let mut month_line = String::new();
+
+    for (idx, week) in weeks.iter().enumerate() {
+      if week.contribution_days.is_empty() {
+        continue;
+      }
+
+      let first_day = &week.contribution_days[0];
+      if let Ok(date) = NaiveDate::parse_from_str(&first_day.date, "%Y-%m-%d") {
+        let current_month = date.month() as usize;
+
+        if idx == 0 {
+          month_line.push_str(months[current_month - 1]);
+        } else {
+          if let Some(prev_week) = weeks.get(idx - 1) {
+            if !prev_week.contribution_days.is_empty() {
+              if let Ok(prev_date) =
+                NaiveDate::parse_from_str(&prev_week.contribution_days[0].date, "%Y-%m-%d")
+              {
+                let prev_month = prev_date.month() as usize;
+                if current_month != prev_month {
+                  let target_width = (idx + 1) * 2;
+                  let current_width = month_line.len();
+                  let month_name = months[current_month - 1];
+                  let needed_space = (target_width - current_width - month_name.len()).max(1);
+                  month_line.push_str(&" ".repeat(needed_space));
+                  month_line.push_str(month_name);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    format!("    {}", month_line)
   }
 
   #[allow(dead_code)]

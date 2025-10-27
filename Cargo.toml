@@ -33,6 +33,7 @@ git2 = "0.20"
 
 # Async traits
 async-trait = "0.1.83"
+regex = "1.12.2"
 
 [dev-dependencies]
 mockito = "1.6"

@@ -13,6 +13,21 @@ use cli::{Cli, interactive};
 use config::ConfigManager;
 use display::DisplayFormatter;
 
+#[derive(Debug, Clone)]
+pub struct VisualOptions {
+  pub graph_only: bool,
+  pub spaced: bool,
+  pub not_spaced: bool,
+  pub width: Option<usize>,
+  pub height: Option<usize>,
+  pub no_achievements: bool,
+  pub no_languages: bool,
+  pub no_issues: bool,
+  pub no_pr: bool,
+  pub no_account: bool,
+  pub no_grid: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
   let args = Cli::parse();
@@ -51,6 +66,21 @@ async fn main() -> Result<()> {
   if args.no_date {
     config_manager.config.show_date = false;
   }
+
+  // Visual options for display
+  let _visual_opts = VisualOptions {
+    graph_only: args.graph_only,
+    spaced: args.spaced,
+    not_spaced: args.not_spaced,
+    width: args.width,
+    height: args.height,
+    no_achievements: args.no_achievements,
+    no_languages: args.no_languages,
+    no_issues: args.no_issues,
+    no_pr: args.no_pr,
+    no_account: args.no_account,
+    no_grid: args.no_grid,
+  };
 
   // Create fetcher
   let provider = config_manager

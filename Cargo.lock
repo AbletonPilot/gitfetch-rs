@@ -550,6 +550,7 @@ dependencies = [
  "directories",
  "git2",
  "mockito",
+ "regex",
  "reqwest",
  "rusqlite",
  "serde",
