@@ -202,9 +202,15 @@ impl ContributionGraph {
                   let target_width = (idx + 1) * 2;
                   let current_width = month_line.len();
                   let month_name = months[current_month - 1];
-                  let needed_space = (target_width - current_width - month_name.len()).max(1);
-                  month_line.push_str(&" ".repeat(needed_space));
-                  month_line.push_str(month_name);
+                  // Prevent underflow: ensure target_width > current_width + month_name.len()
+                  if target_width > current_width + month_name.len() {
+                    let needed_space = target_width - current_width - month_name.len();
+                    month_line.push_str(&" ".repeat(needed_space));
+                    month_line.push_str(month_name);
+                  } else {
+                    month_line.push(' ');
+                    month_line.push_str(month_name);
+                  }
                 }
               }
             }
