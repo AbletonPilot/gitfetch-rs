@@ -1,6 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
+
+const CACHE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub struct CacheManager {
   conn: Connection,
@@ -28,9 +30,21 @@ impl CacheManager {
       [],
     )?;
 
+    // Add version column if it doesn't exist (for migration)
+    let _ = conn.execute(
+      "ALTER TABLE users ADD COLUMN version TEXT NOT NULL DEFAULT '0.0.0'",
+      [],
+    );
+
     conn.execute(
       "CREATE INDEX IF NOT EXISTS idx_cached_at ON users(cached_at)",
       [],
+    )?;
+
+    // Clear cache if version changed
+    conn.execute(
+      "DELETE FROM users WHERE version != ?",
+      params![CACHE_VERSION],
     )?;
 
     Ok(Self {
@@ -42,16 +56,21 @@ impl CacheManager {
   pub fn get_cached_user_data(&self, username: &str) -> Result<Option<serde_json::Value>> {
     let mut stmt = self
       .conn
-      .prepare("SELECT user_data, cached_at FROM users WHERE username = ?")?;
+      .prepare("SELECT user_data, cached_at, version FROM users WHERE username = ?")?;
 
     let result = stmt.query_row(params![username], |row| {
       let user_data: String = row.get(0)?;
       let cached_at: String = row.get(1)?;
-      Ok((user_data, cached_at))
+      let version: String = row.get(2)?;
+      Ok((user_data, cached_at, version))
     });
 
     match result {
-      Ok((user_data, cached_at)) => {
+      Ok((user_data, cached_at, version)) => {
+        // Check version match
+        if version != CACHE_VERSION {
+          return Ok(None);
+        }
         if self.is_cache_expired(&cached_at)? {
           return Ok(None);
         }
@@ -66,16 +85,21 @@ impl CacheManager {
   pub fn get_cached_stats(&self, username: &str) -> Result<Option<serde_json::Value>> {
     let mut stmt = self
       .conn
-      .prepare("SELECT stats_data, cached_at FROM users WHERE username = ?")?;
+      .prepare("SELECT stats_data, cached_at, version FROM users WHERE username = ?")?;
 
     let result = stmt.query_row(params![username], |row| {
       let stats_data: String = row.get(0)?;
       let cached_at: String = row.get(1)?;
-      Ok((stats_data, cached_at))
+      let version: String = row.get(2)?;
+      Ok((stats_data, cached_at, version))
     });
 
     match result {
-      Ok((stats_data, cached_at)) => {
+      Ok((stats_data, cached_at, version)) => {
+        // Check version match
+        if version != CACHE_VERSION {
+          return Ok(None);
+        }
         if self.is_cache_expired(&cached_at)? {
           return Ok(None);
         }
@@ -98,9 +122,9 @@ impl CacheManager {
     let stats_str = serde_json::to_string(stats)?;
 
     self.conn.execute(
-      "INSERT OR REPLACE INTO users (username, user_data, stats_data, cached_at)
-             VALUES (?1, ?2, ?3, ?4)",
-      params![username, user_data_str, stats_str, now],
+      "INSERT OR REPLACE INTO users (username, user_data, stats_data, cached_at, version)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+      params![username, user_data_str, stats_str, now, CACHE_VERSION],
     )?;
 
     Ok(())
