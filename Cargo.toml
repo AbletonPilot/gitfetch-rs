@@ -1,7 +1,14 @@
 [package]
 name = "gitfetch-rs"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+authors = ["AbletonPilot"]
+license = "GPL-2.0-only"
+description = "Neofetch-style CLI tool for git providers (Rust port of gitfetch by Matars)"
+repository = "https://github.com/AbletonPilot/gitfetch-rs"
+readme = "README.md"
+keywords = ["git", "github", "cli", "neofetch", "stats"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 # CLI

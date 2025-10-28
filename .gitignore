@@ -1,5 +1,7 @@
 /target
 /gitfetch-main
+/tests
 Cargo.lock
+test_search.sh
 TODO.md
 README.md

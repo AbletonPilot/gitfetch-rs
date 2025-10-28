@@ -9,24 +9,56 @@ enum Layout {
   Full,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct VisualOptions {
+  pub graph_only: bool,
+  pub spaced: bool,
+  pub graph_timeline: bool,
+  pub width: Option<usize>,
+  pub height: Option<usize>,
+  pub no_achievements: bool,
+  pub no_languages: bool,
+  pub no_issues: bool,
+  pub no_pr: bool,
+  pub no_account: bool,
+  pub no_grid: bool,
+}
+
 pub struct DisplayFormatter {
   config: Config,
   terminal_width: usize,
   terminal_height: usize,
+  visual_opts: VisualOptions,
 }
 
 impl DisplayFormatter {
-  pub fn new(config: Config) -> Result<Self> {
+  pub fn new(config: Config, visual_opts: VisualOptions) -> Result<Self> {
     let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
 
     Ok(Self {
       config,
       terminal_width: cols as usize,
       terminal_height: rows as usize,
+      visual_opts,
     })
   }
 
   pub fn display(&self, username: &str, user_data: &Value, stats: &Value) -> Result<()> {
+    // Handle --graph-timeline option
+    if self.visual_opts.graph_timeline {
+      let timeline = crate::utils::timeline::get_git_timeline_graph(false)?;
+      println!();
+      println!("{}", timeline);
+      return Ok(());
+    }
+
+    // Handle --graph-only option
+    if self.visual_opts.graph_only {
+      self.display_contribution_graph(username, stats)?;
+      println!();
+      return Ok(());
+    }
+
     let layout = self.determine_layout(username, user_data, stats);
 
     match layout {
@@ -39,15 +71,123 @@ impl DisplayFormatter {
     Ok(())
   }
 
-  fn determine_layout(&self, _username: &str, _user_data: &Value, _stats: &Value) -> Layout {
-    // 터미널 크기에 따라 레이아웃 결정
-    if self.terminal_width < 80 {
-      Layout::Minimal
-    } else if self.terminal_width < 120 {
-      Layout::Compact
-    } else {
-      Layout::Full
+  fn determine_layout(&self, username: &str, user_data: &Value, stats: &Value) -> Layout {
+    // Try layouts in order: full -> compact -> minimal
+    // Choose the first one that fits in terminal dimensions
+    let layouts = vec![Layout::Full, Layout::Compact, Layout::Minimal];
+
+    for layout in layouts {
+      let (width, height) = self.calculate_layout_dimensions(username, user_data, stats, &layout);
+      let available_height = self.terminal_height.saturating_sub(2).max(10);
+
+      if width <= self.terminal_width && height <= available_height {
+        return layout;
+      }
     }
+
+    Layout::Minimal
+  }
+
+  fn calculate_layout_dimensions(
+    &self,
+    username: &str,
+    user_data: &Value,
+    stats: &Value,
+    layout: &Layout,
+  ) -> (usize, usize) {
+    match layout {
+      Layout::Minimal => self.calculate_minimal_dimensions(username, stats),
+      Layout::Compact => self.calculate_compact_dimensions(username, user_data, stats),
+      Layout::Full => self.calculate_full_dimensions(username, user_data, stats),
+    }
+  }
+
+  fn calculate_minimal_dimensions(&self, _username: &str, _stats: &Value) -> (usize, usize) {
+    if !self.visual_opts.no_grid {
+      let width = self
+        .visual_opts
+        .width
+        .unwrap_or(self.terminal_width.saturating_sub(4));
+      let height = self.visual_opts.height.unwrap_or(7);
+      (width, height)
+    } else {
+      // Just header
+      (50, 2)
+    }
+  }
+
+  fn calculate_compact_dimensions(
+    &self,
+    _username: &str,
+    _user_data: &Value,
+    _stats: &Value,
+  ) -> (usize, usize) {
+    let graph_width = self
+      .visual_opts
+      .width
+      .unwrap_or_else(|| (self.terminal_width.saturating_sub(40).max(40) * 3) / 4);
+
+    let graph_height = if !self.visual_opts.no_grid {
+      self.visual_opts.height.unwrap_or(7)
+    } else {
+      2
+    };
+
+    let mut right_lines = 0;
+    if !self.visual_opts.no_account {
+      right_lines += 1; // User info header
+    }
+    if !self.visual_opts.no_achievements {
+      right_lines += 5; // Achievements section
+    }
+
+    let max_lines = graph_height.max(right_lines);
+    let right_width = 40; // Estimated right side width
+
+    (graph_width + 2 + right_width, max_lines)
+  }
+
+  fn calculate_full_dimensions(
+    &self,
+    _username: &str,
+    _user_data: &Value,
+    stats: &Value,
+  ) -> (usize, usize) {
+    let graph_width = self
+      .visual_opts
+      .width
+      .unwrap_or_else(|| ((self.terminal_width.saturating_sub(10).max(50) * 3) / 4).max(50));
+
+    let graph_height = if !self.visual_opts.no_grid {
+      let base_height = self.visual_opts.height.unwrap_or(7);
+      let mut total = base_height + 1; // +1 for month line
+
+      // Add PR/Issues sections if enabled
+      if !self.visual_opts.no_pr || !self.visual_opts.no_issues {
+        total += 6; // Estimated PR/Issues section height
+      }
+      total
+    } else {
+      2
+    };
+
+    let mut right_height = 0;
+    if !self.visual_opts.no_account {
+      right_height += 6; // User info
+    }
+    if !self.visual_opts.no_languages && self.terminal_width >= 120 {
+      if let Some(langs) = stats["languages"].as_object() {
+        right_height += 2 + langs.len().min(5); // Languages section
+      }
+    }
+    if !self.visual_opts.no_achievements {
+      right_height += 5; // Achievements
+    }
+
+    let max_height = graph_height.max(right_height);
+    let right_width = 45; // Estimated right side width
+
+    (graph_width + 2 + right_width, max_height)
   }
 
   fn display_minimal(&self, username: &str, stats: &Value) -> Result<()> {
@@ -60,23 +200,61 @@ impl DisplayFormatter {
     println!();
 
     let graph = ContributionGraph::from_json(&stats["contribution_graph"]);
-    let total_contribs = graph.calculate_total_contributions();
+    let graph_width = (self.terminal_width.saturating_sub(40).max(40) * 3) / 4;
 
-    // 헤더
-    let name = user_data["name"].as_str().unwrap_or(username);
-    let header = format!(
-      "\x1b[38;2;118;215;161m{}\x1b[0m - \x1b[38;2;255;184;108m{}\x1b[0m \x1b[38;2;118;215;161mcontributions this year\x1b[0m",
-      name, total_contribs
-    );
-    println!("{}", header);
-    println!();
+    // Left side: graph lines
+    let graph_lines = if !self.visual_opts.no_grid {
+      self.get_contribution_graph_lines(username, stats)?
+    } else {
+      let total_contribs = graph.calculate_total_contributions();
+      let name = user_data["name"].as_str().unwrap_or(username);
+      vec![format!(
+        "\x1b[38;2;118;215;161m{}\x1b[0m - \x1b[38;2;255;184;108m{}\x1b[0m \x1b[38;2;118;215;161mcontributions this year\x1b[0m",
+        name, total_contribs
+      )]
+    };
 
-    // 기여도 그래프
-    self.display_contribution_graph(username, stats)?;
+    // Right side: compact user info + achievements (NO languages, NO PR/Issues)
+    let mut right_lines = Vec::new();
 
-    // 성취
-    println!();
-    self.display_achievements(&graph)?;
+    if !self.visual_opts.no_account {
+      let total_contribs = graph.calculate_total_contributions();
+      let name = user_data["name"].as_str().unwrap_or(username);
+      right_lines.push(format!(
+        "\x1b[38;2;118;215;161m{}\x1b[0m - \x1b[38;2;255;184;108m{}\x1b[0m \x1b[38;2;118;215;161mcontributions this year\x1b[0m",
+        name, total_contribs
+      ));
+    }
+
+    if !self.visual_opts.no_achievements {
+      let achievement_lines = self.format_achievements(&graph);
+      if !achievement_lines.is_empty() {
+        if !right_lines.is_empty() {
+          right_lines.push(String::new());
+        }
+        right_lines.extend(achievement_lines);
+      }
+    }
+
+    // Display side-by-side
+    let max_lines = graph_lines.len().max(right_lines.len());
+    for i in 0..max_lines {
+      let graph_part = if i < graph_lines.len() {
+        &graph_lines[i]
+      } else {
+        ""
+      };
+      let graph_len = self.display_width(graph_part);
+      let padding = " ".repeat(graph_width.saturating_sub(graph_len));
+
+      let info_part = if i < right_lines.len() {
+        &right_lines[i]
+      } else {
+        ""
+      };
+
+      println!("{}{}  {}", graph_part, padding, info_part);
+    }
 
     Ok(())
   }
@@ -87,25 +265,85 @@ impl DisplayFormatter {
     let graph = ContributionGraph::from_json(&stats["contribution_graph"]);
     let total_contribs = graph.calculate_total_contributions();
 
-    // 왼쪽: 기여도 그래프
-    let graph_lines = self.get_contribution_graph_lines(username, stats)?;
+    // Left: contribution graph + PR/Issues below (only if --no-grid is not set)
+    let mut graph_lines = if !self.visual_opts.no_grid {
+      self.get_contribution_graph_lines(username, stats)?
+    } else {
+      vec![]
+    };
 
-    // 오른쪽: 사용자 정보
-    let info_lines = self.format_user_info(username, user_data, total_contribs);
-    let language_lines = self.format_languages(stats);
-    let achievement_lines = self.format_achievements(&graph);
+    // Add PR/Issues sections to left side (below graph) if enabled
+    if !self.visual_opts.no_pr || !self.visual_opts.no_issues {
+      let pr_lines = if !self.visual_opts.no_pr {
+        self.format_pull_requests(stats)
+      } else {
+        vec![]
+      };
 
-    let mut right_lines = info_lines;
-    if !language_lines.is_empty() {
-      right_lines.push(String::new());
-      right_lines.extend(language_lines);
+      let issue_lines = if !self.visual_opts.no_issues {
+        self.format_issues(stats)
+      } else {
+        vec![]
+      };
+
+      // Combine PR and Issues side-by-side below graph
+      if !pr_lines.is_empty() || !issue_lines.is_empty() {
+        if !graph_lines.is_empty() {
+          graph_lines.push(String::new()); // Add spacing
+        }
+
+        let pr_width = pr_lines
+          .iter()
+          .map(|l| self.display_width(l))
+          .max()
+          .unwrap_or(0);
+        let max_section_lines = pr_lines.len().max(issue_lines.len());
+
+        for i in 0..max_section_lines {
+          let pr_part = if i < pr_lines.len() { &pr_lines[i] } else { "" };
+          let pr_part_width = self.display_width(pr_part);
+          let padding = " ".repeat(pr_width.saturating_sub(pr_part_width) + 3);
+
+          let issue_part = if i < issue_lines.len() {
+            &issue_lines[i]
+          } else {
+            ""
+          };
+
+          // Add 4-space indentation to match graph
+          graph_lines.push(format!("    {}{}{}", pr_part, padding, issue_part));
+        }
+      }
     }
-    if !achievement_lines.is_empty() {
-      right_lines.push(String::new());
-      right_lines.extend(achievement_lines);
+
+    // Right: user information
+    let mut right_lines = vec![];
+
+    if !self.visual_opts.no_account {
+      right_lines.extend(self.format_user_info(username, user_data, stats, total_contribs));
     }
 
-    // 사이드바이사이드 출력
+    if !self.visual_opts.no_languages {
+      let language_lines = self.format_languages(stats);
+      if !language_lines.is_empty() {
+        if !right_lines.is_empty() {
+          right_lines.push(String::new());
+        }
+        right_lines.extend(language_lines);
+      }
+    }
+
+    if !self.visual_opts.no_achievements {
+      let achievement_lines = self.format_achievements(&graph);
+      if !achievement_lines.is_empty() {
+        if !right_lines.is_empty() {
+          right_lines.push(String::new());
+        }
+        right_lines.extend(achievement_lines);
+      }
+    }
+
+    // Side-by-side output
     let max_left_width = graph_lines
       .iter()
       .map(|l| self.display_width(l))
@@ -138,9 +376,19 @@ impl DisplayFormatter {
   fn get_contribution_graph_lines(&self, _username: &str, stats: &Value) -> Result<Vec<String>> {
     let graph = ContributionGraph::from_json(&stats["contribution_graph"]);
     let custom_box = self.config.custom_box.as_deref().unwrap_or("■");
-    let show_date = self.config.show_date;
+    let show_date = true; // Always show month labels
+    let spaced = self.visual_opts.spaced;
 
-    let lines = graph.render(52, custom_box, &self.config.colors, show_date);
+    // Use width/height options if specified, otherwise None (defaults: width=52, height=7)
+    let lines = graph.render(
+      self.visual_opts.width,
+      self.visual_opts.height,
+      custom_box,
+      &self.config.colors,
+      show_date,
+      spaced,
+    );
+
     Ok(lines)
   }
 
@@ -152,10 +400,33 @@ impl DisplayFormatter {
     Ok(())
   }
 
+  pub fn display_simulation_from_grid(&self, grid: Vec<Vec<u8>>) -> Result<()> {
+    let graph = ContributionGraph::from_grid(grid);
+    let custom_box = self.config.custom_box.as_deref().unwrap_or("■");
+    let show_date = false; // No date labels for simulations
+    let spaced = self.visual_opts.spaced;
+
+    let lines = graph.render(
+      None, // Use full width
+      None, // Use full height (7 days)
+      custom_box,
+      &self.config.colors,
+      show_date,
+      spaced,
+    );
+
+    for line in lines {
+      println!("{}", line);
+    }
+
+    Ok(())
+  }
+
   fn format_user_info(
     &self,
     _username: &str,
     user_data: &Value,
+    stats: &Value,
     total_contribs: u32,
   ) -> Vec<String> {
     let mut lines = Vec::new();
@@ -192,6 +463,11 @@ impl DisplayFormatter {
       if !blog.is_empty() {
         lines.push(format!("{} {}", self.label("Website"), blog));
       }
+    }
+
+    // Add stars amount
+    if let Some(total_stars) = stats["total_stars"].as_i64() {
+      lines.push(format!("{} {} ⭐", self.label("Stars"), total_stars));
     }
 
     lines
@@ -292,14 +568,6 @@ impl DisplayFormatter {
     lines
   }
 
-  fn display_achievements(&self, graph: &ContributionGraph) -> Result<()> {
-    let lines = self.format_achievements(graph);
-    for line in lines {
-      println!("{}", line);
-    }
-    Ok(())
-  }
-
   fn render_progress_bar(&self, percentage: f64, width: usize) -> String {
     let width = width.max(1);
     let capped = percentage.max(0.0).min(100.0);
@@ -339,9 +607,87 @@ impl DisplayFormatter {
   }
 
   fn display_width(&self, text: &str) -> usize {
-    // ANSI 코드를 제거한 실제 표시 너비
+    // Calculate actual display width after removing ANSI codes
     let ansi_pattern = regex::Regex::new(r"\x1b\[[0-9;]*m").unwrap();
     let clean = ansi_pattern.replace_all(text, "");
     clean.chars().count()
+  }
+
+  fn format_pull_requests(&self, stats: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    let prs = match stats.get("pull_requests") {
+      Some(pr_data) if pr_data.is_object() => pr_data,
+      _ => return lines,
+    };
+
+    let open = prs["open"].as_i64().unwrap_or(0);
+    let awaiting = prs["awaiting_review"].as_i64().unwrap_or(0);
+    let mentions = prs["mentions"].as_i64().unwrap_or(0);
+
+    lines.push(self.colorize("PULL REQUESTS", "header"));
+    lines.push(self.colorize(&"─".repeat(13), "muted")); // Add underline
+
+    lines.push(format!(
+      "{} {}",
+      self.colorize("Awaiting Review:", "header"),
+      awaiting
+    ));
+    lines.push(format!("  {}", self.colorize("• None", "muted")));
+
+    lines.push(format!(
+      "{} {}",
+      self.colorize("Your Open PRs:", "header"),
+      open
+    ));
+    lines.push(format!("  {}", self.colorize("• None", "muted")));
+
+    lines.push(format!(
+      "{} {}",
+      self.colorize("Mentions:", "header"),
+      mentions
+    ));
+    lines.push(format!("  {}", self.colorize("• None", "muted")));
+
+    lines
+  }
+
+  fn format_issues(&self, stats: &Value) -> Vec<String> {
+    let mut lines = Vec::new();
+
+    let issues = match stats.get("issues") {
+      Some(issue_data) if issue_data.is_object() => issue_data,
+      _ => return lines,
+    };
+
+    let assigned = issues["assigned"].as_i64().unwrap_or(0);
+    let created = issues["created"].as_i64().unwrap_or(0);
+    let mentions = issues["mentions"].as_i64().unwrap_or(0);
+
+    lines.push(self.colorize("ISSUES", "header"));
+    lines.push(self.colorize(&"─".repeat(6), "muted")); // Add underline
+
+    lines.push(format!(
+      "{} {}",
+      self.colorize("Assigned:", "header"),
+      assigned
+    ));
+    lines.push(format!("  {}", self.colorize("• None", "muted")));
+
+    lines.push(format!(
+      "{} {}",
+      self.colorize("Created (open):", "header"),
+      created
+    ));
+    lines.push(format!("  {}", self.colorize("• None", "muted")));
+
+    lines.push(format!(
+      "{} {}",
+      self.colorize("Mentions:", "header"),
+      mentions
+    ));
+    lines.push(format!("  {}", self.colorize("• None", "muted")));
+
+    lines
   }
 }

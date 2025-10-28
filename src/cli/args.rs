@@ -16,6 +16,10 @@ pub struct Cli {
   #[arg(long)]
   pub clear_cache: bool,
 
+  /// Show version information
+  #[arg(long, short = 'V')]
+  pub version: bool,
+
   /// Change the configured git provider
   #[arg(long)]
   pub change_provider: bool,
@@ -71,4 +75,20 @@ pub struct Cli {
   /// Hide contribution grid/graph
   #[arg(long)]
   pub no_grid: bool,
+
+  /// Simulate contribution graph with text (A-Z and space only)
+  #[arg(long)]
+  pub text: Option<String>,
+
+  /// Simulate contribution graph with predefined shapes
+  #[arg(long, value_delimiter = ',')]
+  pub shape: Option<Vec<String>>,
+
+  /// Show git timeline graph instead of contribution graph
+  #[arg(long)]
+  pub graph_timeline: bool,
+
+  /// Analyze local git repository (requires .git folder)
+  #[arg(long)]
+  pub local: bool,
 }

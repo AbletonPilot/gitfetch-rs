@@ -18,6 +18,7 @@ pub struct Day {
   #[allow(dead_code)]
   pub date: String,
 }
+
 impl ContributionGraph {
   pub fn from_json(data: &Value) -> Self {
     let weeks = data
@@ -46,26 +47,70 @@ impl ContributionGraph {
     Self { weeks }
   }
 
+  pub fn from_grid(grid: Vec<Vec<u8>>) -> Self {
+    // grid is 7 rows x N columns
+    if grid.is_empty() || grid[0].is_empty() {
+      return Self { weeks: Vec::new() };
+    }
+
+    let num_columns = grid[0].len();
+    let mut weeks = Vec::new();
+
+    for col_idx in 0..num_columns {
+      let mut week_days = Vec::new();
+      for row_idx in 0..7 {
+        let intensity = if row_idx < grid.len() && col_idx < grid[row_idx].len() {
+          grid[row_idx][col_idx]
+        } else {
+          0
+        };
+
+        week_days.push(Day {
+          contribution_count: intensity as u32,
+          date: format!("2023-01-{:02}", col_idx + 1),
+        });
+      }
+
+      weeks.push(Week {
+        contribution_days: week_days,
+      });
+    }
+
+    Self { weeks }
+  }
+
   pub fn render(
     &self,
-    _width: usize,
+    width: Option<usize>,
+    height: Option<usize>,
     custom_box: &str,
     colors: &ColorConfig,
     show_date: bool,
+    spaced: bool,
   ) -> Vec<String> {
     let mut lines = Vec::new();
-    let recent_weeks = self.get_recent_weeks(52);
+
+    // Use specified width or default to 52 weeks
+    let num_weeks = width.unwrap_or(52);
+    let recent_weeks = self.get_recent_weeks(num_weeks);
 
     if show_date {
       let month_line = self.build_month_line(&recent_weeks);
       lines.push(month_line);
     }
 
-    for day_idx in 0..7 {
+    // Use specified height or default to 7 days (full week)
+    let num_days = height.unwrap_or(7).min(7);
+
+    for day_idx in 0..num_days {
       let mut row = String::from("    ");
       for week in &recent_weeks {
         if let Some(day) = week.contribution_days.get(day_idx) {
-          let block = self.get_contribution_block(day.contribution_count, custom_box, colors);
+          let block = if spaced {
+            self.get_contribution_block_spaced(day.contribution_count, custom_box, colors)
+          } else {
+            self.get_contribution_block(day.contribution_count, colors)
+          };
           row.push_str(&block);
         }
       }
@@ -76,7 +121,7 @@ impl ContributionGraph {
     lines
   }
 
-  fn get_contribution_block(&self, count: u32, custom_box: &str, colors: &ColorConfig) -> String {
+  fn get_contribution_block(&self, count: u32, colors: &ColorConfig) -> String {
     let color = match count {
       0 => &colors.level_0,
       1..=2 => &colors.level_1,
@@ -85,6 +130,32 @@ impl ContributionGraph {
       _ => &colors.level_4,
     };
 
+    // Not-spaced mode: use background color for filled square (2 spaces)
+    let bg_color = get_ansi_color(color).unwrap_or_default();
+    let bg_ansi = if !bg_color.is_empty() && bg_color.starts_with("\x1b[38;2;") {
+      // Convert foreground (38) to background (48)
+      bg_color.replace("\x1b[38;2;", "\x1b[48;2;")
+    } else {
+      bg_color
+    };
+    format!("{}  \x1b[0m", bg_ansi)
+  }
+
+  fn get_contribution_block_spaced(
+    &self,
+    count: u32,
+    custom_box: &str,
+    colors: &ColorConfig,
+  ) -> String {
+    let color = match count {
+      0 => &colors.level_0,
+      1..=2 => &colors.level_1,
+      3..=6 => &colors.level_2,
+      7..=12 => &colors.level_3,
+      _ => &colors.level_4,
+    };
+
+    // Spaced mode: use custom box character with foreground color + space
     let ansi_color = get_ansi_color(color).unwrap_or_default();
     format!("{}{}\x1b[0m ", ansi_color, custom_box)
   }

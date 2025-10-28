@@ -7,30 +7,22 @@ mod config;
 mod display;
 mod fetcher;
 mod models;
+mod utils;
 
 use cache::CacheManager;
 use cli::{Cli, interactive};
 use config::ConfigManager;
 use display::DisplayFormatter;
 
-#[derive(Debug, Clone)]
-pub struct VisualOptions {
-  pub graph_only: bool,
-  pub spaced: bool,
-  pub not_spaced: bool,
-  pub width: Option<usize>,
-  pub height: Option<usize>,
-  pub no_achievements: bool,
-  pub no_languages: bool,
-  pub no_issues: bool,
-  pub no_pr: bool,
-  pub no_account: bool,
-  pub no_grid: bool,
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
   let args = Cli::parse();
+
+  // Show version
+  if args.version {
+    println!("gitfetch-rs version: {}", env!("CARGO_PKG_VERSION"));
+    return Ok(());
+  }
 
   // Clear cache
   if args.clear_cache {
@@ -57,6 +49,7 @@ async fn main() -> Result<()> {
     println!("🚀 Welcome to gitfetch! Let's set up your configuration.\n");
     initialize_gitfetch(&mut config_manager).await?;
     println!("\n✅ Configuration saved! You can now use gitfetch.\n");
+    return Ok(());
   }
 
   // Apply CLI args to config
@@ -68,10 +61,16 @@ async fn main() -> Result<()> {
   }
 
   // Visual options for display
-  let _visual_opts = VisualOptions {
+  let visual_opts = display::VisualOptions {
     graph_only: args.graph_only,
-    spaced: args.spaced,
-    not_spaced: args.not_spaced,
+    spaced: if args.not_spaced {
+      false
+    } else if args.spaced {
+      true
+    } else {
+      true // Default to spaced mode
+    },
+    graph_timeline: args.graph_timeline,
     width: args.width,
     height: args.height,
     no_achievements: args.no_achievements,
@@ -81,6 +80,40 @@ async fn main() -> Result<()> {
     no_account: args.no_account,
     no_grid: args.no_grid,
   };
+
+  // Handle text/shape simulation
+  if args.text.is_some() || args.shape.is_some() {
+    let formatter = DisplayFormatter::new(config_manager.config, visual_opts)?;
+
+    if let Some(text) = args.text {
+      use display::text_patterns::text_to_grid;
+      let grid = text_to_grid(&text).map_err(|e| anyhow::anyhow!("{}", e))?;
+      formatter.display_simulation_from_grid(grid)?;
+    } else if let Some(shapes) = args.shape {
+      use display::text_patterns::shape_to_grid;
+      let grid = shape_to_grid(&shapes).map_err(|e| anyhow::anyhow!("{}", e))?;
+      formatter.display_simulation_from_grid(grid)?;
+    }
+
+    return Ok(());
+  }
+
+  // Handle local mode
+  if args.local {
+    use std::path::Path;
+
+    if !Path::new(".git").exists() {
+      return Err(anyhow::anyhow!("Error: --local requires .git folder"));
+    }
+
+    let local_data = utils::git::analyze_local_repo()?;
+    let username = local_data["name"].as_str().unwrap_or("Local User");
+
+    let formatter = DisplayFormatter::new(config_manager.config, visual_opts)?;
+    formatter.display(username, &local_data, &local_data)?;
+
+    return Ok(());
+  }
 
   // Create fetcher
   let provider = config_manager
@@ -132,7 +165,7 @@ async fn main() -> Result<()> {
   };
 
   // Display
-  let formatter = DisplayFormatter::new(config_manager.config)?;
+  let formatter = DisplayFormatter::new(config_manager.config, visual_opts)?;
   formatter.display(&username, &user_data, &stats)?;
 
   Ok(())
@@ -173,11 +206,26 @@ async fn initialize_gitfetch(config_manager: &mut ConfigManager) -> Result<()> {
     config_manager.get_token(),
   )?;
 
-  let username = fetcher.get_authenticated_user().await?;
-  println!("Using authenticated user: {}", username);
-  config_manager.set_default_username(username);
+  match fetcher.get_authenticated_user().await {
+    Ok(username) => {
+      println!("Using authenticated user: {}", username);
+      config_manager.set_default_username(username);
+    }
+    Err(e) => {
+      eprintln!("Could not get authenticated user: {}", e);
+      if provider == "github" {
+        eprintln!("Please authenticate with: gh auth login");
+      } else if provider == "gitlab" {
+        eprintln!("Please authenticate with: glab auth login");
+      } else {
+        eprintln!("Please ensure you have a valid token configured");
+      }
+      return Err(e);
+    }
+  }
 
-  config_manager.config.cache_expiry_minutes = 15;
+  let cache_expiry = interactive::prompt_cache_expiry()?;
+  config_manager.config.cache_expiry_minutes = cache_expiry as u32;
 
   config_manager.save()?;
 

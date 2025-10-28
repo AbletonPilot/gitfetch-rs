@@ -286,7 +286,7 @@ impl GitHubFetcher {
     username.to_string()
   }
 
-  fn search_items(&self, query: &str, per_page: usize) -> Value {
+  fn search_items(&self, query: &str, per_page: usize) -> i64 {
     // Search issues and PRs using GitHub CLI search command
     let search_type = if query.contains("is:pr") {
       "prs"
@@ -318,56 +318,25 @@ impl GitHubFetcher {
     let output = match cmd.output() {
       Ok(out) if out.status.success() => out,
       _ => {
-        return serde_json::json!({
-          "total_count": 0,
-          "items": []
-        });
+        return 0;
       }
     };
 
     let stdout = match String::from_utf8(output.stdout) {
       Ok(s) => s,
       Err(_) => {
-        return serde_json::json!({
-          "total_count": 0,
-          "items": []
-        });
+        return 0;
       }
     };
 
     let data: Vec<Value> = match serde_json::from_str(&stdout) {
       Ok(d) => d,
       Err(_) => {
-        return serde_json::json!({
-          "total_count": 0,
-          "items": []
-        });
+        return 0;
       }
     };
 
-    let items: Vec<Value> = data
-      .iter()
-      .take(per_page)
-      .map(|item| {
-        let repo_info = &item["repository"];
-        let repo_name = repo_info["nameWithOwner"]
-          .as_str()
-          .or_else(|| repo_info["name"].as_str())
-          .unwrap_or("");
-
-        serde_json::json!({
-          "title": item["title"].as_str().unwrap_or(""),
-          "repo": repo_name,
-          "url": item["url"].as_str().unwrap_or(""),
-          "number": item["number"].as_u64()
-        })
-      })
-      .collect();
-
-    serde_json::json!({
-      "total_count": items.len(),
-      "items": items
-    })
+    data.len() as i64
   }
 
   fn parse_search_query(&self, query: &str) -> Vec<String> {

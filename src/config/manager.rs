@@ -27,11 +27,11 @@ pub struct ColorConfig {
 impl Default for ColorConfig {
   fn default() -> Self {
     Self {
-      level_0: "#161b22".to_string(),
-      level_1: "#0e4429".to_string(),
-      level_2: "#006d32".to_string(),
-      level_3: "#26a641".to_string(),
-      level_4: "#39d353".to_string(),
+      level_0: "#ebedf0".to_string(), // Light gray like Python
+      level_1: "#9be9a8".to_string(),
+      level_2: "#40c463".to_string(),
+      level_3: "#30a14e".to_string(),
+      level_4: "#216e39".to_string(),
     }
   }
 }
@@ -51,16 +51,13 @@ impl ConfigManager {
 
     let config_path = config_dir.join("config.toml");
 
-    let mut config = if config_path.exists() {
+    let config = if config_path.exists() {
       let content = std::fs::read_to_string(&config_path)?;
-      toml::from_str(&content)?
+      toml::from_str(&content).unwrap_or_else(|_| Config::default())
     } else {
+      // Use defaults if no config file exists (like Python version)
       Config::default()
     };
-
-    if config.cache_expiry_minutes == 0 {
-      config.cache_expiry_minutes = 15;
-    }
 
     Ok(Self {
       config_path,
