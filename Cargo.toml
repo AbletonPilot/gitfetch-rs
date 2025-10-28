@@ -9,6 +9,12 @@ repository = "https://github.com/AbletonPilot/gitfetch-rs"
 readme = "README.md"
 keywords = ["git", "github", "cli", "neofetch", "stats"]
 categories = ["command-line-utilities"]
+exclude = [
+  ".github/",
+  ".gitignore",
+  "rustfmt.toml",
+  "tests/",
+]
 
 [dependencies]
 # CLI

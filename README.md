@@ -13,11 +13,13 @@ A blazing-fast Rust port of [gitfetch](https://github.com/Matars/gitfetch) - a n
 ## Installation
 
 ```bash
-# Build from source
-cargo build --release
+# From crates.io (recommended)
+cargo install gitfetch-rs
 
-# Install
-cargo install --path .
+# Or build from source
+git clone https://github.com/AbletonPilot/gitfetch-rs
+cd gitfetch-rs
+cargo build --release
 ```
 
 ## Requirements
@@ -48,12 +50,14 @@ gitfetch-rs --width 26 --custom-box "█"
 ## Options
 
 ### General
+- `--version` - Show version information
 - `--no-cache` - Bypass cache and fetch fresh data
 - `--clear-cache` - Clear the cache and exit
 - `--change-provider` - Change the configured git provider
 
 ### Visual Customization
 - `--graph-only` - Show only the contribution graph
+- `--graph-timeline` - Show git timeline graph (git log --graph style)
 - `--width <N>` - Custom width for contribution graph (default: 52 weeks)
 - `--height <N>` - Custom height for contribution graph (default: 7 days, max: 7)
 - `--custom-box <CHAR>` - Custom character for contribution blocks
@@ -114,14 +118,14 @@ gitfetch-rs --width 52
 
 ## Configuration
 
-Configuration is stored in:
+Configuration is automatically stored in platform-specific directories:
 - Linux: `~/.config/gitfetch/config.toml`
 - macOS: `~/Library/Application Support/gitfetch/config.toml`
 - Windows: `%APPDATA%\gitfetch\config.toml`
 
-Cache is stored in your system's cache directory:
-- Linux: `~/.cache/gitfetch/cache.db`
-- macOS: `~/Library/Caches/gitfetch/cache.db`
+Cache database is stored in:
+- Linux: `~/.local/share/gitfetch/cache.db`
+- macOS: `~/Library/Application Support/gitfetch/cache.db`
 - Windows: `%LOCALAPPDATA%\gitfetch\cache.db`
 
 ## Architecture
@@ -130,6 +134,7 @@ Cache is stored in your system's cache directory:
 gitfetch-rs/
 ├── src/
 │   ├── main.rs              # Entry point
+│   ├── lib.rs               # Library interface
 │   ├── cli/                 # CLI argument parsing
 │   ├── config/              # Configuration management
 │   ├── cache/               # SQLite caching
@@ -141,43 +146,10 @@ gitfetch-rs/
 │   ├── display/             # Terminal output
 │   │   ├── formatter.rs     # Layout rendering
 │   │   ├── graph.rs         # Contribution graph
-│   │   └── colors.rs        # Color handling
-│   └── models/              # Data structures
+│   │   └── text_patterns.rs # Text/shape simulation
+│   ├── models/              # Data structures
+│   └── utils/               # Git helpers & timeline
 ```
-
-## Current Status
-
-**Progress: ~95% Complete**
-
-✅ **Completed:**
-- All 4 git provider integrations (GitHub, GitLab, Gitea, Sourcehut)
-- Contribution graph rendering with customization
-- Text and shape simulation
-- Local repository analysis
-- PR/Issues statistics display
-- Visual customization (--no-* flags, spaced/compact layouts)
-- SQLite caching system
-- **36 unit tests passing**
-
-🚧 **In Progress:**
-- CI/CD pipeline setup
-- Cross-platform distribution (Homebrew, AUR)
-
-📋 **Planned:**
-- Git timeline visualization (--graph-timeline)
-- Additional performance optimizations
-
-## Differences from Python Version
-
-- ✅ **Performance**: 10-100x faster execution
-- ✅ **Memory**: Lower memory footprint
-- ✅ **Deployment**: Single binary, no Python dependencies
-- ✅ **Type Safety**: Compile-time error checking
-- ✅ **Feature Parity**: ~95% complete (see TODO.md)
-
-## Contributing
-
-Contributions are welcome! Please check [TODO.md](TODO.md) for pending features.
 
 ## License
 
