@@ -10,23 +10,10 @@ pub struct GitHubFetcher {
 
 impl GitHubFetcher {
   pub fn new() -> Result<Self> {
-    Self::check_gh_cli()?;
-
+    // gh CLI 검증을 실제 사용 시점으로 지연 (Python과 동일)
     Ok(Self {
       _client: reqwest::Client::new(),
     })
-  }
-
-  fn check_gh_cli() -> Result<()> {
-    let output = Command::new("gh").args(&["auth", "status"]).output();
-
-    match output {
-      Ok(out) if out.status.success() => Ok(()),
-      Ok(_) => Err(anyhow::anyhow!(
-        "GitHub CLI not authenticated. Run: gh auth login"
-      )),
-      Err(_) => Err(anyhow::anyhow!("GitHub CLI not installed")),
-    }
   }
 
   fn gh_api(&self, endpoint: &str) -> Result<Value> {
