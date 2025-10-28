@@ -100,15 +100,15 @@ impl Fetcher for GitHubFetcher {
 
     // Fetch PR and issue statistics
     let pull_requests = serde_json::json!({
-        "awaiting_review": self.search_items(&format!("is:pr state:open review-requested:{}", search_username), 10),
-        "open": self.search_items(&format!("is:pr state:open author:{}", search_username), 10),
-        "mentions": self.search_items(&format!("is:pr state:open mentions:{}", search_username), 10),
+        "awaiting_review": self.search_items(&format!("is:pr state:open review-requested:{}", search_username), 5),
+        "open": self.search_items(&format!("is:pr state:open author:{}", search_username), 5),
+        "mentions": self.search_items(&format!("is:pr state:open mentions:{}", search_username), 5),
     });
 
     let issues = serde_json::json!({
-        "assigned": self.search_items(&format!("is:issue state:open assignee:{}", search_username), 10),
-        "created": self.search_items(&format!("is:issue state:open author:{}", search_username), 10),
-        "mentions": self.search_items(&format!("is:issue state:open mentions:{}", search_username), 10),
+        "assigned": self.search_items(&format!("is:issue state:open assignee:{}", search_username), 5),
+        "created": self.search_items(&format!("is:issue state:open author:{}", search_username), 5),
+        "mentions": self.search_items(&format!("is:issue state:open mentions:{}", search_username), 5),
     });
 
     Ok(serde_json::json!({
@@ -286,7 +286,7 @@ impl GitHubFetcher {
     username.to_string()
   }
 
-  fn search_items(&self, query: &str, per_page: usize) -> i64 {
+  fn search_items(&self, query: &str, per_page: usize) -> Value {
     // Search issues and PRs using GitHub CLI search command
     let search_type = if query.contains("is:pr") {
       "prs"
@@ -318,25 +318,49 @@ impl GitHubFetcher {
     let output = match cmd.output() {
       Ok(out) if out.status.success() => out,
       _ => {
-        return 0;
+        return serde_json::json!({"total_count": 0, "items": []});
       }
     };
 
     let stdout = match String::from_utf8(output.stdout) {
       Ok(s) => s,
       Err(_) => {
-        return 0;
+        return serde_json::json!({"total_count": 0, "items": []});
       }
     };
 
     let data: Vec<Value> = match serde_json::from_str(&stdout) {
       Ok(d) => d,
       Err(_) => {
-        return 0;
+        return serde_json::json!({"total_count": 0, "items": []});
       }
     };
 
-    data.len() as i64
+    // Extract relevant fields from items
+    let items: Vec<Value> = data
+      .iter()
+      .take(per_page)
+      .map(|item| {
+        let repo_info = item.get("repository").and_then(|r| r.as_object());
+        let repo_name = repo_info
+          .and_then(|r| r.get("nameWithOwner"))
+          .or_else(|| repo_info.and_then(|r| r.get("name")))
+          .and_then(|n| n.as_str())
+          .unwrap_or("");
+
+        serde_json::json!({
+          "title": item.get("title").and_then(|t| t.as_str()).unwrap_or(""),
+          "repo": repo_name,
+          "url": item.get("url").and_then(|u| u.as_str()).unwrap_or(""),
+          "number": item.get("number").and_then(|n| n.as_i64()).unwrap_or(0),
+        })
+      })
+      .collect();
+
+    serde_json::json!({
+      "total_count": items.len(),
+      "items": items
+    })
   }
 
   fn parse_search_query(&self, query: &str) -> Vec<String> {

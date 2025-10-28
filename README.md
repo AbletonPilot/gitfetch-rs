@@ -2,6 +2,8 @@
 
 A blazing-fast Rust port of [gitfetch](https://github.com/Matars/gitfetch) - a neofetch-style CLI tool for displaying git provider statistics.
 
+<img width="1266" height="939" alt="Image" src="https://github.com/user-attachments/assets/461bc17c-724c-4a5e-92d1-714b5e8ba93c" />
+
 ## Features
 
 - 🚀 **Multi-Provider Support**: GitHub, GitLab, Gitea/Forgejo, Sourcehut

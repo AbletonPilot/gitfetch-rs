@@ -156,8 +156,9 @@ impl ContributionGraph {
     };
 
     // Spaced mode: use custom box character with foreground color + space
+    // Do NOT include reset code here - it will be added at end of line
     let ansi_color = get_ansi_color(color).unwrap_or_default();
-    format!("{}{}\x1b[0m ", ansi_color, custom_box)
+    format!("{}{} ", ansi_color, custom_box)
   }
 
   fn get_recent_weeks(&self, limit: usize) -> Vec<Week> {
