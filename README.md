@@ -2,7 +2,7 @@
 
 A blazing-fast Rust port of [gitfetch](https://github.com/Matars/gitfetch) - a neofetch-style CLI tool for displaying git provider statistics.
 
-<img width="1266" height="939" alt="Image" src="https://github.com/user-attachments/assets/461bc17c-724c-4a5e-92d1-714b5e8ba93c" />
+![preview](https://pub-9fab8c462d8d4428bf45385586df9f1a.r2.dev/2025-10-29-124623_hyprshot.png)
 
 ## Features
 
