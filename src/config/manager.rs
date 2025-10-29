@@ -3,7 +3,7 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
   pub provider: Option<String>,
   pub provider_url: Option<String>,
@@ -11,8 +11,28 @@ pub struct Config {
   pub default_username: Option<String>,
   pub cache_expiry_minutes: u32,
   pub custom_box: Option<String>,
+  #[serde(default = "default_show_date")]
   pub show_date: bool,
   pub colors: ColorConfig,
+}
+
+fn default_show_date() -> bool {
+  true
+}
+
+impl Default for Config {
+  fn default() -> Self {
+    Self {
+      provider: None,
+      provider_url: None,
+      token: None,
+      default_username: None,
+      cache_expiry_minutes: 15,
+      custom_box: None,
+      show_date: true,
+      colors: ColorConfig::default(),
+    }
+  }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -43,7 +63,7 @@ pub struct ConfigManager {
 
 impl ConfigManager {
   pub fn new() -> Result<Self> {
-    let project_dirs = ProjectDirs::from("com", "gitfetch", "gitfetch")
+    let project_dirs = ProjectDirs::from("com", "gitfetch", "gitfetch-rs")
       .ok_or_else(|| anyhow::anyhow!("Could not determine config directory"))?;
 
     let config_dir = project_dirs.config_dir();

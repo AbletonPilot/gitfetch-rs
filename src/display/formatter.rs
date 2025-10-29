@@ -647,7 +647,7 @@ impl DisplayFormatter {
   ) -> Result<Vec<String>> {
     let graph = ContributionGraph::from_json(&stats["contribution_graph"]);
     let custom_box = self.config.custom_box.as_deref().unwrap_or("■");
-    let show_date = true;
+    let show_date = self.config.show_date;
     let spaced = self.visual_opts.spaced;
 
     // Calculate max weeks that fit in width_constraint
