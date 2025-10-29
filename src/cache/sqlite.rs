@@ -136,6 +136,57 @@ impl CacheManager {
     Ok(cached_time < expiry_time)
   }
 
+  // Get stale cache (ignore expiry, only check version)
+  pub fn get_stale_cached_user_data(&self, username: &str) -> Result<Option<serde_json::Value>> {
+    let mut stmt = self
+      .conn
+      .prepare("SELECT user_data, version FROM users WHERE username = ?")?;
+
+    let result = stmt.query_row(params![username], |row| {
+      let user_data: String = row.get(0)?;
+      let version: String = row.get(1)?;
+      Ok((user_data, version))
+    });
+
+    match result {
+      Ok((user_data, version)) => {
+        // Only check version match, ignore expiry
+        if version != CACHE_VERSION {
+          return Ok(None);
+        }
+        let data = serde_json::from_str(&user_data)?;
+        Ok(Some(data))
+      }
+      Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+      Err(e) => Err(e.into()),
+    }
+  }
+
+  pub fn get_stale_cached_stats(&self, username: &str) -> Result<Option<serde_json::Value>> {
+    let mut stmt = self
+      .conn
+      .prepare("SELECT stats_data, version FROM users WHERE username = ?")?;
+
+    let result = stmt.query_row(params![username], |row| {
+      let stats_data: String = row.get(0)?;
+      let version: String = row.get(1)?;
+      Ok((stats_data, version))
+    });
+
+    match result {
+      Ok((stats_data, version)) => {
+        // Only check version match, ignore expiry
+        if version != CACHE_VERSION {
+          return Ok(None);
+        }
+        let data = serde_json::from_str(&stats_data)?;
+        Ok(Some(data))
+      }
+      Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+      Err(e) => Err(e.into()),
+    }
+  }
+
   pub fn clear(&self) -> Result<()> {
     self.conn.execute("DELETE FROM users", [])?;
     Ok(())

@@ -10,9 +10,30 @@ mod models;
 mod utils;
 
 use cache::CacheManager;
-use cli::{Cli, interactive};
+use cli::{interactive, Cli};
 use config::ConfigManager;
 use display::DisplayFormatter;
+
+async fn check_for_updates() -> Result<Option<String>> {
+  let client = reqwest::Client::new();
+  let response = client
+    .get("https://crates.io/api/v1/crates/gitfetch-rs")
+    .header("User-Agent", "gitfetch-rs")
+    .timeout(std::time::Duration::from_secs(3))
+    .send()
+    .await?;
+
+  if response.status().is_success() {
+    let json: serde_json::Value = response.json().await?;
+    if let Some(version) = json["crate"]["max_stable_version"].as_str() {
+      Ok(Some(version.to_string()))
+    } else {
+      Ok(None)
+    }
+  } else {
+    Ok(None)
+  }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,6 +42,24 @@ async fn main() -> Result<()> {
   // Show version
   if args.version {
     println!("gitfetch-rs version: {}", env!("CARGO_PKG_VERSION"));
+
+    // Check for updates from crates.io
+    match check_for_updates().await {
+      Ok(Some(latest)) => {
+        let current = env!("CARGO_PKG_VERSION");
+        if latest != current {
+          println!("\x1b[93mUpdate available: {}", latest);
+          println!("Get it at: https://crates.io/crates/gitfetch-rs");
+          println!("Or run: cargo install cargo-update");
+          println!("\tcargo install-update gitfetch-rs\x1b[0m");
+        } else {
+          println!("You are using the latest version.");
+        }
+      }
+      Ok(None) => println!("Could not check for updates."),
+      Err(_) => println!("Could not check for updates."),
+    }
+
     return Ok(());
   }
 
@@ -60,6 +99,9 @@ async fn main() -> Result<()> {
     config_manager.config.show_date = false;
   }
 
+  // Clone config for later use (before any borrowing)
+  let config_clone = config_manager.config.clone();
+
   // Visual options for display
   let visual_opts = display::VisualOptions {
     graph_only: args.graph_only,
@@ -83,7 +125,7 @@ async fn main() -> Result<()> {
 
   // Handle text/shape simulation
   if args.text.is_some() || args.shape.is_some() {
-    let formatter = DisplayFormatter::new(config_manager.config, visual_opts)?;
+    let formatter = DisplayFormatter::new(config_clone.clone(), visual_opts)?;
 
     if let Some(text) = args.text {
       use display::text_patterns::text_to_grid;
@@ -109,7 +151,7 @@ async fn main() -> Result<()> {
     let local_data = utils::git::analyze_local_repo()?;
     let username = local_data["name"].as_str().unwrap_or("Local User");
 
-    let formatter = DisplayFormatter::new(config_manager.config, visual_opts)?;
+    let formatter = DisplayFormatter::new(config_clone, visual_opts)?;
     formatter.display(username, &local_data, &local_data)?;
 
     return Ok(());
@@ -124,6 +166,9 @@ async fn main() -> Result<()> {
     .unwrap_or("https://api.github.com");
   let token = config_manager.get_token();
 
+  // Get cache expiry from cloned config
+  let cache_expiry = config_clone.cache_expiry_minutes;
+
   let fetcher = fetcher::create_fetcher(provider, provider_url, token)?;
 
   // Determine username
@@ -136,7 +181,7 @@ async fn main() -> Result<()> {
   };
 
   // Cache manager
-  let cache_manager = CacheManager::new(config_manager.config.cache_expiry_minutes)?;
+  let cache_manager = CacheManager::new(cache_expiry)?;
 
   // Fetch data
   let (user_data, stats) = if args.no_cache {
@@ -154,18 +199,59 @@ async fn main() -> Result<()> {
         (cached_user, cached_stats)
       }
       None => {
-        let user_data = fetcher.fetch_user_data(&username).await?;
-        let stats = fetcher
-          .fetch_user_stats(&username, Some(&user_data))
-          .await?;
-        cache_manager.cache_user_data(&username, &user_data, &stats)?;
-        (user_data, stats)
+        // Try stale cache for immediate display
+        match (
+          cache_manager.get_stale_cached_user_data(&username)?,
+          cache_manager.get_stale_cached_stats(&username)?,
+        ) {
+          (Some(stale_user), Some(stale_stats)) => {
+            // Display stale data immediately
+            let formatter = DisplayFormatter::new(config_clone.clone(), visual_opts)?;
+            formatter.display(&username, &stale_user, &stale_stats)?;
+
+            // Spawn background refresh
+            let username_clone = username.clone();
+            let provider_clone = provider.to_string();
+            let provider_url_clone = provider_url.to_string();
+            let token_clone = token.map(|s| s.to_string());
+
+            tokio::spawn(async move {
+              if let Ok(fetcher) = fetcher::create_fetcher(
+                &provider_clone,
+                &provider_url_clone,
+                token_clone.as_deref(),
+              ) {
+                if let Ok(user_data) = fetcher.fetch_user_data(&username_clone).await {
+                  if let Ok(stats) = fetcher
+                    .fetch_user_stats(&username_clone, Some(&user_data))
+                    .await
+                  {
+                    if let Ok(cache) = CacheManager::new(cache_expiry) {
+                      let _ = cache.cache_user_data(&username_clone, &user_data, &stats);
+                    }
+                  }
+                }
+              }
+            });
+
+            return Ok(());
+          }
+          _ => {
+            // No cache at all, fetch fresh
+            let user_data = fetcher.fetch_user_data(&username).await?;
+            let stats = fetcher
+              .fetch_user_stats(&username, Some(&user_data))
+              .await?;
+            cache_manager.cache_user_data(&username, &user_data, &stats)?;
+            (user_data, stats)
+          }
+        }
       }
     }
   };
 
   // Display
-  let formatter = DisplayFormatter::new(config_manager.config, visual_opts)?;
+  let formatter = DisplayFormatter::new(config_clone, visual_opts)?;
   formatter.display(&username, &user_data, &stats)?;
 
   Ok(())
