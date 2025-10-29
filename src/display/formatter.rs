@@ -55,7 +55,12 @@ impl DisplayFormatter {
 
     // Handle --graph-only option
     if self.visual_opts.graph_only {
-      self.display_contribution_graph(username, stats)?;
+      let width_constraint = self.terminal_width.saturating_sub(4);
+      let graph_lines =
+        self.get_contribution_graph_lines_with_width(username, stats, width_constraint)?;
+      for line in graph_lines {
+        println!("{}", line);
+      }
       println!();
       return Ok(());
     }
@@ -332,7 +337,25 @@ impl DisplayFormatter {
   }
   fn display_minimal(&self, username: &str, stats: &Value) -> Result<()> {
     println!();
-    self.display_contribution_graph(username, stats)?;
+
+    if self.visual_opts.no_grid {
+      let graph = ContributionGraph::from_json(&stats["contribution_graph"]);
+      let total_contribs = graph.calculate_total_contributions();
+      let name = stats["name"].as_str().unwrap_or(username);
+      println!(
+        "\x1b[38;2;118;215;161m{}\x1b[0m - \x1b[38;2;255;184;108m{}\x1b[0m \x1b[38;2;118;215;161mcontributions this year\x1b[0m",
+        name, total_contribs
+      );
+    } else {
+      // Use terminal width constraint for minimal layout
+      let width_constraint = self.terminal_width.saturating_sub(4);
+      let graph_lines =
+        self.get_contribution_graph_lines_with_width(username, stats, width_constraint)?;
+      for line in graph_lines {
+        println!("{}", line);
+      }
+    }
+
     Ok(())
   }
 
@@ -340,7 +363,7 @@ impl DisplayFormatter {
     println!();
 
     let graph = ContributionGraph::from_json(&stats["contribution_graph"]);
-    let graph_width = (self.terminal_width.saturating_sub(40).max(40) * 3) / 4;
+    let graph_width = ((self.terminal_width.saturating_sub(40) * 3) / 4).max(40);
 
     // Left side: graph lines
     let graph_lines = if !self.visual_opts.no_grid {
@@ -616,26 +639,6 @@ impl DisplayFormatter {
     Ok(())
   }
 
-  fn get_contribution_graph_lines(&self, _username: &str, stats: &Value) -> Result<Vec<String>> {
-    let graph = ContributionGraph::from_json(&stats["contribution_graph"]);
-    let custom_box = self.config.custom_box.as_deref().unwrap_or("■");
-    // Show month labels (date line at top of graph)
-    let show_date = true;
-    let spaced = self.visual_opts.spaced;
-
-    // Use width/height options if specified, otherwise None (defaults: width=52, height=7)
-    let lines = graph.render(
-      self.visual_opts.width,
-      self.visual_opts.height,
-      custom_box,
-      &self.config.colors,
-      show_date,
-      spaced,
-    );
-
-    Ok(lines)
-  }
-
   fn get_contribution_graph_lines_with_width(
     &self,
     _username: &str,
@@ -665,14 +668,6 @@ impl DisplayFormatter {
     );
 
     Ok(lines)
-  }
-
-  fn display_contribution_graph(&self, username: &str, stats: &Value) -> Result<()> {
-    let lines = self.get_contribution_graph_lines(username, stats)?;
-    for line in lines {
-      println!("{}", line);
-    }
-    Ok(())
   }
 
   pub fn display_simulation_from_grid(&self, grid: Vec<Vec<u8>>) -> Result<()> {
